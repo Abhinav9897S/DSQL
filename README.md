@@ -7,7 +7,18 @@ container in the engine is hand-written. There is no `std::vector`, `std::map`,
 It comes with a simple desktop app (built with Qt): type SQL, run it, and a side panel
 lists which data structures the query used, step by step.
 
-## Running it on Windows
+## Download the Windows app (no install needed)
+
+Every push is built and tested on a real Windows machine by GitHub Actions
+(`.github/workflows/windows.yml`). To get the ready-made app:
+
+1. Open the repo's **Actions** tab, click the newest **Windows build** run, and download
+   **MiniSQL-windows** at the bottom (you need to be signed in to GitHub). The **Run
+   workflow** button on the *Windows build* page makes a fresh one at any time.
+2. Extract the zip anywhere, e.g. `C:\MiniSQL`.
+3. Double-click **MiniSQL.exe**. Keep the DLLs and subfolders next to it.
+
+## Building it on Windows yourself
 
 1. **Install Qt.** Download the *Qt Online Installer* from qt.io (it asks you to make a free
    Qt account). Pick the newest **Qt 6.x** and under it **MinGW 64-bit**. The default build
