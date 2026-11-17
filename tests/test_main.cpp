@@ -15,6 +15,7 @@
 #include "storage/BufferPool.h"
 #include "storage/Catalog.h"
 #include "sql/Executor.h"
+#include "sql/Checker.h"
 #include "util/Platform.h"
 
 static int passed = 0, failed = 0;
@@ -472,6 +473,45 @@ static void testPersistence() {
     }
 }
 
+static void testChecker() {
+    section("Error checker (no execution)");
+    Catalog cat(4, 4);
+    cat.openMemory();
+    Executor e(cat);
+    DynArray<Result> r;
+    e.run("CREATE TABLE people (id INT PRIMARY KEY, name VARCHAR(10));", r);
+
+    DynArray<Problem> p;
+    checkSql("SELECT * FROM people;\nSELECT name FROM people WHERE id = 1;", &cat, p);
+    CHECK(p.size() == 0);
+
+    p.clear();
+    checkSql("SELECT * FROM people\nWHERE id = ;", &cat, p);
+    CHECK(p.size() == 1 && p[0].line == 2 && p[0].col == 12 && p[0].length == 1);
+
+    p.clear();   // two broken statements -> two problems, the good one in between is fine
+    checkSql("SELEC 1;\nSELECT * FROM people;\nINSERT INTO people VALUES (1,;", &cat, p);
+    CHECK(p.size() == 2 && p[0].line == 1 && p[1].line == 3);
+
+    p.clear();   // unknown table, marked on the name itself
+    checkSql("SELECT * FROM peple WHERE id = 1;", &cat, p);
+    CHECK(p.size() == 1 && p[0].col == 15 && p[0].length == 5 && p[0].message.startsWith("no table"));
+
+    p.clear();   // tables the script creates first are fine
+    checkSql("CREATE TABLE pets (id INT PRIMARY KEY);\nINSERT INTO pets VALUES (1);\nDROP TABLE pets;\nSELECT * FROM pets;", &cat, p);
+    CHECK(p.size() == 1 && p[0].line == 4);
+
+    p.clear();
+    checkSql("SELECT 'oops FROM people;", &cat, p);
+    CHECK(p.size() == 1 && p[0].col == 8 && p[0].message.startsWith("unterminated"));
+
+    p.clear();
+    checkSql("CREATE TABLE people (x INT);", &cat, p);
+    CHECK(p.size() == 1 && p[0].message.endsWith("already exists"));
+    // the checker must not have run anything
+    CHECK(cat.find("pets", false) == nullptr && cat.tableCount() == 1);
+}
+
 int main() {
     printf("MiniSQL tests\n");
     testStr();
@@ -487,6 +527,7 @@ int main() {
     testBufferPool();
     testSql();
     testPersistence();
+    testChecker();
     printf("\n%d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

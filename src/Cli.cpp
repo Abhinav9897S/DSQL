@@ -1,73 +1,16 @@
 #include "Cli.h"
+#include "sql/Format.h"
 #include "util/Platform.h"
 #include <cstdio>
 #include <cstring>
-
-static int textWidth(const Str& s) {
-    int w = 0;   // count UTF-8 characters, not bytes
-    for (int i = 0; i < s.size(); i++)
-        if (((unsigned char)s[i] & 0xC0) != 0x80) w++;
-    return w;
-}
-
-static void pad(const Str& s, int width, bool right) {
-    int gap = width - textWidth(s);
-    if (right)
-        for (int i = 0; i < gap; i++) putchar(' ');
-    fputs(s.c_str(), stdout);
-    if (!right)
-        for (int i = 0; i < gap; i++) putchar(' ');
-}
-
-static void border(const DynArray<int>& w) {
-    putchar('+');
-    for (int i = 0; i < w.size(); i++) {
-        for (int k = 0; k < w[i] + 2; k++) putchar('-');
-        putchar('+');
-    }
-    putchar('\n');
-}
 
 void printResult(const Result& r, bool explain) {
     if (!r.ok) {
         printf("ERROR: %s\n", r.message.c_str());
         return;
     }
-    if (!r.columns.empty()) {
-        int shown = r.rows.size() < 200 ? r.rows.size() : 200;
-        DynArray<int> w;
-        for (int c = 0; c < r.columns.size(); c++) {
-            int width = textWidth(r.columns[c]);
-            for (int i = 0; i < shown; i++) {
-                int x = textWidth(r.rows[i][c].toString());
-                if (x > width) width = x;
-            }
-            w.push(width > 40 ? 40 : width);
-        }
-        border(w);
-        for (int c = 0; c < r.columns.size(); c++) {
-            fputs("| ", stdout);
-            pad(r.columns[c], w[c], false);
-            putchar(' ');
-        }
-        puts("|");
-        border(w);
-        for (int i = 0; i < shown; i++) {
-            for (int c = 0; c < r.columns.size(); c++) {
-                Str cell = r.rows[i][c].toString();
-                if (textWidth(cell) > 40) cell = cell.substr(0, 37) + "...";
-                fputs("| ", stdout);
-                pad(cell, w[c], r.types[c] == Type::Int || r.types[c] == Type::Float);
-                putchar(' ');
-            }
-            puts("|");
-        }
-        border(w);
-        if (shown < r.rows.size()) printf("(showing %d of %d rows)\n", shown, r.rows.size());
-    }
-    printf("%s  (%.3f ms)", r.message.c_str(), r.ms);
-    if (!r.plan.empty()) printf("  [%s]", r.plan.c_str());
-    putchar('\n');
+    fputs(formatTable(r, 200).c_str(), stdout);
+    puts(formatSummary(r).c_str());
 
     if (explain) {
         for (int i = 0; i < r.trace.steps.size(); i++) {

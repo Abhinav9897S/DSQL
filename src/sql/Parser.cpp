@@ -19,6 +19,7 @@ Token Parser::take() {
     Token t = q_.pop();
     lastEnd_ = t.end;
     lastLine_ = t.line;
+    lastCol_ = t.col + (t.end - t.start);
     if (cur_) cur_->tokens.push(t);
     return t;
 }
@@ -52,7 +53,10 @@ static Str describe(const Token& t) {
 
 DbError Parser::error(const Str& msg) {
     const Token& t = peek();
-    errorLine = t.type == Tok::End ? lastLine_ : t.line;
+    bool atEnd = t.type == Tok::End;
+    errorLine = atEnd ? lastLine_ : t.line;
+    errorCol = atEnd ? lastCol_ : t.col;
+    errorLength = atEnd ? 1 : t.end - t.start;
     Str where = t.type == Tok::End ? Str("at the end") : "at line " + Str::num(t.line) + ", column " + Str::num(t.col);
     return DbError("Syntax error " + where + ": " + msg);
 }

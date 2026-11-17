@@ -8,16 +8,19 @@ class QStackedWidget;
 class QListWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
-class QPlainTextEdit;
 class QTableWidget;
 class QTabWidget;
 class QTextBrowser;
 class QLabel;
 class QAction;
+class QCheckBox;
+class QTimer;
+class CodeEditor;
+class Terminal;
 
 // The whole app in one window, with two pages:
 //   start page - new folder, open folder, in-memory session, recent folders
-//   work page  - tables | SQL box + results | how the last query ran
+//   work page  - tables | SQL editor + terminal/result/problems | how the last query ran
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -40,7 +43,8 @@ private:
     void showWorkPage();
     void showStartPage();
 
-    // the script in the SQL box
+    // the script in the editor
+    void setScript(const QString& text, const QString& path);
     void loadScript(const QString& path);
     void openScriptDialog();
     bool saveScript();
@@ -48,9 +52,10 @@ private:
     void updateScriptLabel();
     void loadSample();
 
-    // running
+    // checking and running
+    void checkNow();
     void run(bool all);
-    void runSql(const QString& sql, int firstLine);
+    void runSql(const QString& sql, int firstLine, bool fromEditor);
     void showResult(const Result& r);
     void explain(const Result& r);
     void refreshTables();
@@ -66,13 +71,17 @@ private:
     QStackedWidget* pages_;
     QListWidget* recentList_;
     QTreeWidget* tables_;
-    QPlainTextEdit* editor_;
+    CodeEditor* editor_;
     QLabel* scriptLabel_;
+    QLabel* problemsLabel_;
+    QCheckBox* darkBox_;
     QTabWidget* output_;
+    Terminal* terminal_;
     QTableWidget* resultTable_;
-    QPlainTextEdit* messages_;
+    QListWidget* problemsList_;
     QTextBrowser* explain_;
     QLabel* cursorLabel_;
+    QTimer* checkTimer_;
 
     QAction* closeFolderAct_;
     QAction* openScriptAct_;
@@ -80,8 +89,9 @@ private:
     QAction* runAllAct_;
     QAction* runStatementAct_;
     QAction* sampleAct_;
+    QAction* upperAct_;
     QAction* darkAct_;
 
-    QString scriptPath_;          // file the SQL box is saved to (may not exist yet)
+    QString scriptPath_;          // file the editor is saved to (may not exist yet)
     DynArray<QString> recent_;    // recently opened folders, newest first
 };

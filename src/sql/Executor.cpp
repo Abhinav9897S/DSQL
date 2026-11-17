@@ -204,7 +204,7 @@ void Executor::run(const Str& sql, DynArray<Result>& out, int firstLine) {
         r.kind = "ERROR";
         r.sql = sql;
         r.line = firstLine;
-        r.errorLine = lexer.line();
+        r.errorLine = lexer.errorLine;
         r.message = e.msg;
         out.push(std::move(r));
         return;

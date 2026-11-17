@@ -25,6 +25,10 @@ public:
     void run(Queue<Token>& out);   // throws DbError on bad input
     int line() const { return line_; }
 
+    // where the text went wrong, set before run() throws
+    int errorLine = 1;
+    int errorCol = 1;
+
 private:
     char peek(int k = 0) const { return pos_ + k < src_.size() ? src_[pos_ + k] : 0; }
     void skipSpaceAndComments();

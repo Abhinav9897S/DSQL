@@ -35,22 +35,36 @@ copies the Qt DLLs next to the exe, so the folder runs on any Windows PC.
 
 ## Using the app
 
-- **Start screen:** *New Folder…*, *Open Folder…*, *In-Memory Session*, and a list of
-  recent folders (double-click one to open it). Tables are saved in the folder's `data/`
+- **Start screen:** *New Folder…*, *Open Folder…*, *In-Memory Session*, and your recent
+  folders (double-click one to open it). Tables are saved in the folder's `data/`
   subfolder.
 - **Left:** the tables, with their columns and which ones have an index. Double-click a
   table to see its rows.
-- **Middle:** the SQL box.
-  - **Run All** (`F5`) runs everything, or just the selected text.
+- **SQL editor:**
+  - line numbers, and syntax colours for keywords, types, functions, strings, numbers and
+    comments;
+  - SQL words become capitals as you type (`select` → `SELECT`), and pasted SQL is
+    capitalised too. Text inside quotes and comments is never changed, and
+    *Edit → Capitalise SQL Keywords* (`Ctrl+Shift+U`) does the whole script.
+- **Error detector:** the script is checked as you type, without running anything.
+  - It catches syntax errors and tables that don't exist, including tables the script
+    creates further up, which count as existing.
+  - Each problem gets a red squiggle at the exact spot and a red line number. Hover
+    either one to read the message.
+  - The count shows above the editor, and the *Problems* tab lists them all
+    (double-click one to jump there).
+- **Running:**
+  - **Run All** (`F5`) runs everything, or only the selected text.
   - **Run Statement** (`Ctrl+Enter`) runs the statement the cursor is in.
   - `Ctrl+S` saves the script.
-- **Bottom:** **Result** shows the rows. **Messages** lists every statement that ran.
+- **Terminal** (bottom): every statement that ran, its output as a text table, and
+  errors in red. You can also type a statement at the `minisql>` prompt and press Enter.
+  `Up`/`Down` bring back earlier ones, and `clear` empties it. The **Result** tab shows
+  the last result as a grid.
 - **Right:** *How the query ran* shows the plan, the data structures used with their
   counts, and the step-by-step story from the engine.
-- **View → Dark Mode** switches the colours. **File → Close Folder** goes back to the
-  start screen.
-
-If there's an error, the cursor jumps to the line it's on.
+- **Dark mode:** the checkbox above the editor (or *View → Dark Mode*). *File → Close
+  Folder* goes back to the start screen.
 
 ## Linux and macOS
 

@@ -1,5 +1,9 @@
 #include "gui/MainWindow.h"
+#include "gui/CodeEditor.h"
+#include "gui/Terminal.h"
 #include "gui/QtStr.h"
+#include "sql/Checker.h"
+#include "sql/Format.h"
 #include "util/Error.h"
 #include <QApplication>
 #include <QStackedWidget>
@@ -7,12 +11,12 @@
 #include <QListWidget>
 #include <QTreeWidget>
 #include <QHeaderView>
-#include <QPlainTextEdit>
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QLabel>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QMenuBar>
@@ -23,17 +27,17 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QCloseEvent>
-#include <QFontDatabase>
 #include <QStyleFactory>
 #include <QStyle>
 #include <QPalette>
 #include <QTextBlock>
-#include <QTime>
+#include <QTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
 
-static const int MAX_ROWS_SHOWN = 1000;
+static const int MAX_ROWS_SHOWN = 1000;     // in the Result grid
+static const int MAX_ROWS_IN_TERMINAL = 50;
 
 // ---------------------------------------------------------------- helpers
 
@@ -119,7 +123,16 @@ static QString readResource(const char* path) {
 
 MainWindow::MainWindow(Catalog& cat, Executor& exec, QWidget* parent) : QMainWindow(parent), cat_(cat), exec_(exec) {
     setWindowTitle("MiniSQL");
-    resize(1200, 760);
+    resize(1280, 800);
+
+    QSettings settings;
+    bool dark = settings.value("darkMode", false).toBool();
+    setEditorColorsDark(dark);   // before any editor exists
+
+    checkTimer_ = new QTimer(this);
+    checkTimer_->setSingleShot(true);
+    checkTimer_->setInterval(400);   // check once typing pauses
+    connect(checkTimer_, &QTimer::timeout, this, &MainWindow::checkNow);
 
     pages_ = new QStackedWidget(this);
     pages_->addWidget(buildStartPage());
@@ -130,7 +143,6 @@ MainWindow::MainWindow(Catalog& cat, Executor& exec, QWidget* parent) : QMainWin
     cursorLabel_ = new QLabel(this);
     statusBar()->addPermanentWidget(cursorLabel_);
 
-    QSettings settings;
     QString list = settings.value("recent").toString();
     int from = 0;
     while (from < list.size()) {   // one folder per line
@@ -139,7 +151,7 @@ MainWindow::MainWindow(Catalog& cat, Executor& exec, QWidget* parent) : QMainWin
         if (nl > from) recent_.push(list.mid(from, nl - from));
         from = nl + 1;
     }
-    setDarkMode(settings.value("darkMode", false).toBool());
+    setDarkMode(dark);
     showStartPage();
 }
 
@@ -195,7 +207,7 @@ QWidget* MainWindow::buildWorkPage() {
     tables_->setToolTip("Double-click a table to see its rows");
     connect(tables_, &QTreeWidget::itemDoubleClicked, this, &MainWindow::tableDoubleClicked);
 
-    // middle: SQL box on top, results below
+    // middle: run bar + editor on top, terminal / result / problems below
     QSplitter* middle = new QSplitter(Qt::Vertical, split);
     QWidget* top = new QWidget(middle);
     QVBoxLayout* topCol = new QVBoxLayout(top);
@@ -207,34 +219,44 @@ QWidget* MainWindow::buildWorkPage() {
     runOne->setToolTip("Run the statement the cursor is in");
     connect(runAll, &QPushButton::clicked, this, [this] { run(true); });
     connect(runOne, &QPushButton::clicked, this, [this] { run(false); });
+    darkBox_ = new QCheckBox("Dark mode", top);
+    connect(darkBox_, &QCheckBox::toggled, this, &MainWindow::setDarkMode);
+    problemsLabel_ = new QLabel(top);
+    problemsLabel_->setToolTip("The script is checked as you type. Click the Problems tab for the list.");
     scriptLabel_ = new QLabel(top);
     bar->addWidget(runAll);
     bar->addWidget(runOne);
+    bar->addSpacing(12);
+    bar->addWidget(darkBox_);
     bar->addStretch();
+    bar->addWidget(problemsLabel_);
+    bar->addSpacing(12);
     bar->addWidget(scriptLabel_);
     topCol->addLayout(bar);
 
-    editor_ = new QPlainTextEdit(top);
-    editor_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    editor_->setLineWrapMode(QPlainTextEdit::NoWrap);
-    editor_->setTabStopDistance(editor_->fontMetrics().horizontalAdvance(' ') * 4);
+    editor_ = new CodeEditor(top);
     editor_->setPlaceholderText("Type SQL here, e.g.  CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(20));");
     connect(editor_, &QPlainTextEdit::cursorPositionChanged, this, [this] {
         QTextCursor c = editor_->textCursor();
         cursorLabel_->setText(QString("Line %1, Col %2").arg(c.blockNumber() + 1).arg(c.positionInBlock() + 1));
     });
     connect(editor_->document(), &QTextDocument::modificationChanged, this, &MainWindow::updateScriptLabel);
+    connect(editor_, &QPlainTextEdit::textChanged, checkTimer_, qOverload<>(&QTimer::start));
     topCol->addWidget(editor_);
 
     output_ = new QTabWidget(middle);
+    terminal_ = new Terminal(output_);
+    connect(terminal_, &Terminal::commandEntered, this, [this](const QString& sql) { runSql(sql, 1, false); });
     resultTable_ = new QTableWidget(output_);
     resultTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     resultTable_->setAlternatingRowColors(true);
-    messages_ = new QPlainTextEdit(output_);
-    messages_->setReadOnly(true);
-    messages_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    problemsList_ = new QListWidget(output_);
+    problemsList_->setToolTip("Double-click a problem to jump to its line");
+    connect(problemsList_, &QListWidget::itemDoubleClicked, this,
+            [this](QListWidgetItem* item) { editor_->goToLine(item->data(Qt::UserRole).toInt()); });
+    output_->addTab(terminal_, "Terminal");
     output_->addTab(resultTable_, "Result");
-    output_->addTab(messages_, "Messages");
+    output_->addTab(problemsList_, "Problems");
     middle->addWidget(top);
     middle->addWidget(output_);
     middle->setStretchFactor(0, 3);
@@ -255,7 +277,7 @@ QWidget* MainWindow::buildWorkPage() {
     split->setStretchFactor(0, 1);
     split->setStretchFactor(1, 3);
     split->setStretchFactor(2, 2);
-    split->setSizes({200, 620, 360});   // Qt takes a list here
+    split->setSizes({200, 640, 340});   // Qt takes a list here
     return split;
 }
 
@@ -275,6 +297,18 @@ void MainWindow::buildMenus() {
     file->addSeparator();
     connect(file->addAction("Exit"), &QAction::triggered, this, &QWidget::close);
 
+    QMenu* edit = menuBar()->addMenu("&Edit");
+    QAction* undo = edit->addAction("Undo");
+    undo->setShortcut(QKeySequence::Undo);
+    connect(undo, &QAction::triggered, editor_, &QPlainTextEdit::undo);
+    QAction* redo = edit->addAction("Redo");
+    redo->setShortcut(QKeySequence::Redo);
+    connect(redo, &QAction::triggered, editor_, &QPlainTextEdit::redo);
+    edit->addSeparator();
+    upperAct_ = edit->addAction("Capitalise SQL Keywords");
+    upperAct_->setShortcut(QKeySequence("Ctrl+Shift+U"));
+    connect(upperAct_, &QAction::triggered, editor_, &CodeEditor::uppercaseKeywords);
+
     QMenu* query = menuBar()->addMenu("&Query");
     runAllAct_ = query->addAction("Run All");
     runAllAct_->setShortcuts({QKeySequence("F5"), QKeySequence("Ctrl+Shift+Return")});   // Qt takes a list here
@@ -285,6 +319,8 @@ void MainWindow::buildMenus() {
     query->addSeparator();
     sampleAct_ = query->addAction("Load Sample Script");
     connect(sampleAct_, &QAction::triggered, this, &MainWindow::loadSample);
+    QAction* clearTerm = query->addAction("Clear Terminal");
+    connect(clearTerm, &QAction::triggered, terminal_, &Terminal::clear);
 
     QMenu* view = menuBar()->addMenu("&View");
     darkAct_ = view->addAction("Dark Mode");
@@ -297,7 +333,8 @@ void MainWindow::buildMenus() {
                            "MiniSQL - a small relational database engine for the Data Structures Lab.\n\n"
                            "Every container in the engine is written by hand in C++ (dynamic array, linked list, "
                            "hash table, stack, queue, AVL tree, B+ tree, merge sort). No STL containers.\n\n"
-                           "Ctrl+Enter runs the statement under the cursor, F5 runs everything.");
+                           "F5 runs the script, Ctrl+Enter the statement under the cursor. The script is checked "
+                           "for errors as you type, and SQL words are capitalised for you.");
     });
 }
 
@@ -337,11 +374,9 @@ void MainWindow::openFolder(const QString& path) {
     }
     rememberFolder(full);
     QDir dir(full);
-    scriptPath_ = dir.filePath(dir.exists("getting_started.sql") ? "getting_started.sql" : "queries.sql");
-    if (QFile::exists(scriptPath_)) loadScript(scriptPath_);
-    else editor_->clear();
-    editor_->document()->setModified(false);
-    updateScriptLabel();
+    QString script = dir.filePath(dir.exists("getting_started.sql") ? "getting_started.sql" : "queries.sql");
+    if (QFile::exists(script)) loadScript(script);
+    else setScript(QString(), script);
     setWindowTitle(dir.dirName() + " - MiniSQL");
     showWorkPage();
 }
@@ -349,14 +384,12 @@ void MainWindow::openFolder(const QString& path) {
 void MainWindow::openMemory() {
     if (!maybeSave()) return;
     cat_.openMemory();
-    scriptPath_.clear();
-    editor_->setPlainText("-- In-memory session: nothing is saved to disk.\n"
-                          "-- Query > Load Sample Script loads a full example.\n\n"
-                          "CREATE TABLE notes (id INT PRIMARY KEY, title VARCHAR(40));\n"
-                          "INSERT INTO notes VALUES (1, 'first'), (2, 'second');\n"
-                          "SELECT * FROM notes WHERE id = 2;\n");
-    editor_->document()->setModified(false);
-    updateScriptLabel();
+    setScript("-- In-memory session: nothing is saved to disk.\n"
+              "-- Query > Load Sample Script loads a full example.\n\n"
+              "CREATE TABLE notes (id INT PRIMARY KEY, title VARCHAR(40));\n"
+              "INSERT INTO notes VALUES (1, 'first'), (2, 'second');\n"
+              "SELECT * FROM notes WHERE id = 2;\n",
+              QString());
     setWindowTitle("In-memory session - MiniSQL");
     showWorkPage();
 }
@@ -375,18 +408,20 @@ void MainWindow::showWorkPage() {
     resultTable_->clear();
     resultTable_->setRowCount(0);
     resultTable_->setColumnCount(0);
-    messages_->clear();
     explain_->clear();
+    terminal_->clear();
+    terminal_->printNote(cat_.inMemory() ? "In-memory session.\n" : "Folder: " + QDir::toNativeSeparators(fromPath(cat_.folder())) + "\n");
     refreshTables();
-    for (QAction* a : {closeFolderAct_, openScriptAct_, saveScriptAct_, runAllAct_, runStatementAct_, sampleAct_})
+    checkNow();
+    for (QAction* a : {closeFolderAct_, openScriptAct_, saveScriptAct_, runAllAct_, runStatementAct_, sampleAct_, upperAct_})
         a->setEnabled(true);
     pages_->setCurrentIndex(1);
-    statusBar()->showMessage(cat_.inMemory() ? "In-memory session" : "Folder: " + fromPath(cat_.folder()));
+    output_->setCurrentWidget(terminal_);
     editor_->setFocus();
 }
 
 void MainWindow::showStartPage() {
-    for (QAction* a : {closeFolderAct_, openScriptAct_, saveScriptAct_, runAllAct_, runStatementAct_, sampleAct_})
+    for (QAction* a : {closeFolderAct_, openScriptAct_, saveScriptAct_, runAllAct_, runStatementAct_, sampleAct_, upperAct_})
         a->setEnabled(false);
     refreshRecent();
     setWindowTitle("MiniSQL");
@@ -397,16 +432,21 @@ void MainWindow::showStartPage() {
 
 // ---------------------------------------------------------------- script
 
+void MainWindow::setScript(const QString& text, const QString& path) {
+    scriptPath_ = path;
+    editor_->setPlainText(text);
+    editor_->document()->setModified(false);
+    updateScriptLabel();
+    checkNow();
+}
+
 void MainWindow::loadScript(const QString& path) {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, "Open Script", "Couldn't read " + QDir::toNativeSeparators(path));
         return;
     }
-    scriptPath_ = path;
-    editor_->setPlainText(QString::fromUtf8(f.readAll()));
-    editor_->document()->setModified(false);
-    updateScriptLabel();
+    setScript(QString::fromUtf8(f.readAll()), path);
 }
 
 void MainWindow::openScriptDialog() {
@@ -433,7 +473,7 @@ bool MainWindow::saveScript() {
     return true;
 }
 
-// "queries.sql *" above the SQL box; the star means unsaved changes
+// "queries.sql *" above the editor; the star means unsaved changes
 void MainWindow::updateScriptLabel() {
     QString name = scriptPath_.isEmpty() ? "unsaved script" : QFileInfo(scriptPath_).fileName();
     scriptLabel_->setText(editor_->document()->isModified() ? name + " *" : name);
@@ -453,9 +493,38 @@ void MainWindow::loadSample() {
     if (!maybeSave()) return;
     editor_->setPlainText(readResource(":/examples/getting_started.sql"));
     editor_->document()->setModified(true);
+    checkNow();
 }
 
-// ---------------------------------------------------------------- running SQL
+// ---------------------------------------------------------------- checking and running
+
+// parse the whole script without running it and mark what's wrong
+void MainWindow::checkNow() {
+    if (!cat_.isOpen()) return;
+    DynArray<Problem> problems;
+    checkSql(toStr(editor_->toPlainText()), &cat_, problems);
+
+    DynArray<EditorMark> marks;
+    problemsList_->clear();
+    for (int i = 0; i < problems.size(); i++) {
+        const Problem& p = problems[i];
+        EditorMark m;
+        m.line = p.line;
+        m.col = p.col;
+        m.length = p.length;
+        m.message = qs(p.message);
+        marks.push(m);
+        QListWidgetItem* item = new QListWidgetItem(QString("Line %1, col %2:  %3").arg(p.line).arg(p.col).arg(m.message), problemsList_);
+        item->setData(Qt::UserRole, p.line);
+        item->setForeground(editorColors().error);
+    }
+    editor_->setMarks(marks);
+
+    int n = problems.size();
+    output_->setTabText(2, n ? QString("Problems (%1)").arg(n) : "Problems");
+    problemsLabel_->setText(n ? QString("%1 problem%2").arg(n).arg(n == 1 ? "" : "s") : "No problems");
+    problemsLabel_->setStyleSheet(QString("color: %1;").arg((n ? editorColors().error : editorColors().termOk).name()));
+}
 
 void MainWindow::run(bool all) {
     if (!cat_.isOpen()) return;
@@ -488,10 +557,10 @@ void MainWindow::run(bool all) {
         statusBar()->showMessage("Nothing to run", 3000);
         return;
     }
-    runSql(sql, editor_->document()->findBlock(start).blockNumber() + 1);
+    runSql(sql, editor_->document()->findBlock(start).blockNumber() + 1, true);
 }
 
-void MainWindow::runSql(const QString& sql, int firstLine) {
+void MainWindow::runSql(const QString& sql, int firstLine, bool fromEditor) {
     DynArray<Result> results;
     exec_.run(toStr(sql), results, firstLine);
     try {
@@ -500,17 +569,19 @@ void MainWindow::runSql(const QString& sql, int firstLine) {
         QMessageBox::warning(this, "Saving", qs(e.msg));
     }
 
-    QString time = QTime::currentTime().toString("hh:mm:ss");
     const Result* lastGrid = nullptr;
     const Result* last = nullptr;
     bool changed = false;
     for (int i = 0; i < results.size(); i++) {
         const Result& r = results[i];
-        QString sqlLine = qs(r.sql).simplified();
-        if (sqlLine.size() > 70) sqlLine = sqlLine.left(67) + "...";
-        messages_->appendPlainText(QString("%1  %2  %3  ->  %4  (%5 ms)")
-                                       .arg(time, r.ok ? "OK   " : "ERROR", sqlLine, qs(r.message))
-                                       .arg(r.ms, 0, 'f', 3));
+        terminal_->printCommand(qs(r.sql));
+        if (r.ok) {
+            terminal_->printOutput(qs(formatTable(r, MAX_ROWS_IN_TERMINAL)));
+            terminal_->printSuccess(qs(formatSummary(r)));
+        } else {
+            QString where = fromEditor && r.errorLine > 0 ? QString(" (line %1)").arg(r.errorLine) : QString();
+            terminal_->printError("ERROR" + where + ": " + qs(r.message));
+        }
         if (r.ok && !r.columns.empty()) lastGrid = &r;
         if (r.changed) changed = true;
         last = &r;
@@ -520,23 +591,19 @@ void MainWindow::runSql(const QString& sql, int firstLine) {
     if (lastGrid) showResult(*lastGrid);
     explain(*last);
     if (changed) refreshTables();
+    output_->setCurrentWidget(terminal_);
+    checkNow();   // new or dropped tables change what counts as an error
 
     if (!last->ok) {
-        output_->setCurrentWidget(messages_);
         statusBar()->showMessage("Error: " + qs(last->message), 8000);
-        // put the cursor on the line the error is on
-        if (last->errorLine > 0) {
-            QTextBlock block = editor_->document()->findBlockByNumber(last->errorLine - 1);
-            if (block.isValid()) {
-                QTextCursor c(block);
-                c.select(QTextCursor::LineUnderCursor);
-                editor_->setTextCursor(c);
-                editor_->setFocus();
-            }
+        if (fromEditor && last->errorLine > 0) {   // mark the line and put the cursor there
+            EditorMark m;
+            m.line = last->errorLine;
+            m.message = qs(last->message);
+            editor_->addMark(m);
+            editor_->goToLine(last->errorLine);
         }
     } else {
-        if (lastGrid == last) output_->setCurrentWidget(resultTable_);
-        else output_->setCurrentWidget(messages_);
         statusBar()->showMessage(qs(last->message), 4000);
     }
 }
@@ -557,8 +624,6 @@ void MainWindow::showResult(const Result& r) {
         }
     }
     resultTable_->resizeColumnsToContents();
-    if (r.rows.size() > rows)
-        messages_->appendPlainText(QString("(showing the first %1 of %2 rows)").arg(rows).arg(r.rows.size()));
 }
 
 // the right-hand panel: plan, structures used, then the engine's own step list
@@ -620,7 +685,7 @@ void MainWindow::refreshTables() {
 
 void MainWindow::tableDoubleClicked(QTreeWidgetItem* item) {
     if (item->parent() || item->isDisabled()) return;
-    runSql("SELECT * FROM " + item->text(0) + ";", 1);
+    runSql("SELECT * FROM " + item->text(0) + ";", 1, false);
 }
 
 // ---------------------------------------------------------------- settings
@@ -633,12 +698,12 @@ void MainWindow::setDarkMode(bool on) {
         p.setColor(QPalette::WindowText, Qt::white);
         p.setColor(QPalette::Base, QColor(30, 30, 30));
         p.setColor(QPalette::AlternateBase, QColor(45, 45, 48));
-        p.setColor(QPalette::Text, Qt::white);
+        p.setColor(QPalette::Text, QColor(212, 212, 212));
         p.setColor(QPalette::Button, QColor(55, 55, 58));
         p.setColor(QPalette::ButtonText, Qt::white);
         p.setColor(QPalette::ToolTipBase, QColor(45, 45, 48));
         p.setColor(QPalette::ToolTipText, Qt::white);
-        p.setColor(QPalette::Highlight, QColor(42, 130, 218));
+        p.setColor(QPalette::Highlight, QColor(38, 79, 120));
         p.setColor(QPalette::HighlightedText, Qt::white);
         p.setColor(QPalette::Link, QColor(90, 160, 240));
         p.setColor(QPalette::PlaceholderText, QColor(140, 140, 140));
@@ -647,8 +712,15 @@ void MainWindow::setDarkMode(bool on) {
         p.setColor(QPalette::Disabled, QPalette::WindowText, QColor(130, 130, 130));
     }
     qApp->setPalette(p);
+    setEditorColorsDark(on);
+    editor_->refreshColors();
+    terminal_->refreshColors();
+    checkNow();   // recolours the problem list and count
     QSettings().setValue("darkMode", on);
+
+    // keep the menu item and the checkbox in step
     if (darkAct_->isChecked() != on) darkAct_->setChecked(on);
+    if (darkBox_->isChecked() != on) darkBox_->setChecked(on);
 }
 
 void MainWindow::rememberFolder(const QString& path) {

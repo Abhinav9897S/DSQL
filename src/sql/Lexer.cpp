@@ -90,11 +90,16 @@ void Lexer::run(Queue<Token>& out) {
             }
             out.push(make(dot ? Tok::Float : Tok::Int, start));
         } else if (c == '\'') {
+            int startLine = line_, startCol = start - lineStart_ + 1;
             pos_++;
             Str text;
             for (;;) {
                 char ch = peek();
-                if (!ch) throw DbError("unterminated string starting at line " + Str::num(line_));
+                if (!ch) {
+                    errorLine = startLine;
+                    errorCol = startCol;
+                    throw DbError("unterminated string starting at line " + Str::num(startLine));
+                }
                 if (ch == '\'') {
                     if (peek(1) == '\'') {   // '' is an escaped quote
                         text += '\'';
@@ -122,6 +127,8 @@ void Lexer::run(Queue<Token>& out) {
             } else if (Str("(),;*=<>+-/%.").find(c) >= 0) {
                 pos_++;
             } else {
+                errorLine = line_;
+                errorCol = start - lineStart_ + 1;
                 throw DbError(Str("unexpected character '") + Str(&c, 1) + "' at line " + Str::num(line_) +
                               ", column " + Str::num(start - lineStart_ + 1));
             }

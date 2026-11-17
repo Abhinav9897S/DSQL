@@ -29,6 +29,8 @@ public:
     Str failedSql;
     int failedLine = 1;    // where the statement starts
     int errorLine = 1;     // where the parser gave up
+    int errorCol = 1;
+    int errorLength = 1;   // characters of the offending token
 
 private:
     const Token& peek(int k = 0);
@@ -70,6 +72,7 @@ private:
     Command* cur_;
     int lastEnd_ = 0;    // end offset of the last token taken
     int lastLine_ = 1;   // line of the last token taken
+    int lastCol_ = 1;    // column just after the last token taken
 
     // predicate collection for the planner
     bool collecting_ = false;
