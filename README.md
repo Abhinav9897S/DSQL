@@ -46,6 +46,17 @@ copies the Qt DLLs next to the exe, so the folder runs on any Windows PC.
   - SQL words become capitals as you type (`select` → `SELECT`), and pasted SQL is
     capitalised too. Text inside quotes and comments is never changed, and
     *Edit → Capitalise SQL Keywords* (`Ctrl+Shift+U`) does the whole script.
+  - indentation:
+    - `Enter` keeps the current indentation. After `(` it goes one level deeper and
+      puts the matching `)` on its own line.
+    - `Tab` / `Shift+Tab` indent or outdent every selected line.
+    - `Backspace` in leading spaces removes a whole level, and a `)` typed on an empty
+      line lines up with its `(`.
+  - bracket completion:
+    - `(` adds `)` and `'` adds `'`, and typing the closing one just steps over it.
+    - `Backspace` between an empty pair removes both.
+    - With text selected, `(` or `'` wraps it.
+    - Nothing is paired inside strings or comments.
 - **Error detector:** the script is checked as you type, without running anything.
   - It catches syntax errors and tables that don't exist, including tables the script
     creates further up, which count as existing.

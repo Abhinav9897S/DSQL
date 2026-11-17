@@ -433,26 +433,212 @@ void CodeEditor::insertFromMimeData(const QMimeData* source) {
     uppercaseKeywords();   // pasted SQL gets capitalised too
 }
 
+// ---------------------------------------------------------------- indentation and brackets
+
+static const int INDENT = 4;   // spaces per level
+
+static int leadingSpaces(const QString& line) {
+    int n = 0;
+    while (n < line.size() && line[n] == ' ') n++;
+    return n;
+}
+
+// Enter keeps the indentation; after "(" it goes one level deeper, and if the
+// matching ")" is right there it moves to its own line:
+//     CREATE TABLE t (|)   ->   CREATE TABLE t (
+//                                   |
+//                               )
+void CodeEditor::newLineWithIndent() {
+    QTextCursor c = textCursor();
+    c.beginEditBlock();
+    c.removeSelectedText();
+    QString line = c.block().text();
+    int pos = c.positionInBlock();
+    QString indent(qMin(leadingSpaces(line), pos), ' ');
+
+    int b = pos - 1;
+    while (b >= 0 && line[b] == ' ') b--;   // look past spaces before the cursor
+    bool afterOpen = b >= 0 && line[b] == '(';
+    bool beforeClose = pos < line.size() && line[pos] == ')';
+
+    if (afterOpen) {
+        c.insertText("\n" + indent + QString(INDENT, ' '));
+        if (beforeClose) {
+            int inside = c.position();
+            c.insertText("\n" + indent);
+            c.setPosition(inside);
+        }
+    } else {
+        c.insertText("\n" + indent);
+    }
+    c.endEditBlock();
+    setTextCursor(c);
+    ensureCursorVisible();
+}
+
+// Tab / Shift+Tab on a selection moves every selected line one level
+void CodeEditor::indentLines(bool in) {
+    QTextCursor c = textCursor();
+    int start = c.selectionStart(), end = c.selectionEnd();
+    QTextBlock first = document()->findBlock(start);
+    QTextBlock last = document()->findBlock(end);
+    if (c.hasSelection() && last.position() == end && end > start) last = last.previous();   // selection ends at a line start
+
+    QTextCursor edit(document());
+    edit.beginEditBlock();
+    for (QTextBlock b = first; b.isValid(); b = b.next()) {
+        QString text = b.text();
+        if (in) {
+            if (!text.trimmed().isEmpty()) {
+                edit.setPosition(b.position());
+                edit.insertText(QString(INDENT, ' '));
+            }
+        } else {
+            int remove = qMin(leadingSpaces(text), INDENT);
+            if (remove == 0 && text.startsWith('\t')) remove = 1;
+            if (remove > 0) {
+                edit.setPosition(b.position());
+                edit.setPosition(b.position() + remove, QTextCursor::KeepAnchor);
+                edit.removeSelectedText();
+            }
+        }
+        if (b == last) break;
+    }
+    edit.endEditBlock();
+
+    if (first != last) {   // keep the moved lines selected
+        QTextCursor sel(document());
+        sel.setPosition(first.position());
+        sel.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+        setTextCursor(sel);
+    }
+}
+
+// Backspace removes an empty pair "(|)" / "'|'" together, and in the
+// leading spaces of a line it goes back a whole indent level
+bool CodeEditor::smartBackspace() {
+    QTextCursor c = textCursor();
+    if (c.hasSelection()) return false;
+    QString line = c.block().text();
+    int pos = c.positionInBlock();
+    if (pos == 0) return false;
+
+    if (pos < line.size()) {
+        QChar a = line[pos - 1], b = line[pos];
+        if ((a == '(' && b == ')') || (a == '\'' && b == '\'')) {
+            c.beginEditBlock();
+            c.deleteChar();
+            c.deletePreviousChar();
+            c.endEditBlock();
+            return true;
+        }
+    }
+    if (line[pos - 1] == ' ' && line.left(pos).trimmed().isEmpty()) {
+        int remove = pos % INDENT == 0 ? INDENT : pos % INDENT;
+        c.setPosition(c.position() - remove, QTextCursor::KeepAnchor);
+        c.removeSelectedText();
+        return true;
+    }
+    return false;
+}
+
+// "(" -> "()" and "'" -> "''" with the cursor in between; with a selection,
+// the selection gets wrapped instead
+bool CodeEditor::openPair(QChar open) {
+    QChar close = open == '(' ? ')' : '\'';
+    QTextCursor c = textCursor();
+    if (c.hasSelection()) {
+        QString inner = c.selectedText().replace(QChar(0x2029), '\n');   // Qt marks line breaks with U+2029 here
+        c.insertText(open + inner + close);
+        setTextCursor(c);
+        return true;
+    }
+    QTextBlock block = c.block();
+    QString line = block.text();
+    int pos = c.positionInBlock();
+    if (!isCode(block, pos)) return false;   // inside a string or comment: type it as is
+
+    // only pair up when nothing is glued to the right, e.g. not in front of a word
+    QChar next = pos < line.size() ? line[pos] : QChar(' ');
+    if (!next.isSpace() && !QString("),;").contains(next)) return false;
+    if (open == '\'' && pos > 0 && (isWordChar(line[pos - 1]) || line[pos - 1] == '\'')) return false;
+
+    c.insertText(QString(open) + close);
+    c.movePosition(QTextCursor::Left);
+    setTextCursor(c);
+    return true;
+}
+
+// typing ")" or "'" right in front of the same character just steps over it
+bool CodeEditor::skipClosing(QChar close) {
+    QTextCursor c = textCursor();
+    if (c.hasSelection()) return false;
+    QString line = c.block().text();
+    int pos = c.positionInBlock();
+    if (pos >= line.size() || line[pos] != close) return false;
+    if (close == '\'' && isCode(c.block(), pos)) return false;   // only when it ends the string we're in
+    c.movePosition(QTextCursor::Right);
+    setTextCursor(c);
+    return true;
+}
+
+// ")" typed on an empty line lines up with the line holding its "("
+bool CodeEditor::dedentClosingParen() {
+    QTextCursor c = textCursor();
+    QString before = c.block().text().left(c.positionInBlock());
+    if (before.isEmpty() || !before.trimmed().isEmpty()) return false;
+
+    QString text = toPlainText();
+    int depth = 0;
+    for (int i = c.position() - 1; i >= 0; i--) {
+        if (text[i] == ')') {
+            depth++;
+        } else if (text[i] == '(') {
+            if (depth > 0) {
+                depth--;
+                continue;
+            }
+            QString open = document()->findBlock(i).text();   // found the matching "("
+            c.beginEditBlock();
+            c.movePosition(QTextCursor::StartOfBlock, QTextCursor::KeepAnchor);
+            c.insertText(QString(leadingSpaces(open), ' ') + ")");
+            c.endEditBlock();
+            setTextCursor(c);
+            return true;
+        }
+    }
+    return false;
+}
+
 void CodeEditor::keyPressEvent(QKeyEvent* e) {
     bool enter = e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter;
     bool plain = !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier));
     QString t = e->text();
+    QChar ch = t.size() == 1 ? t[0] : QChar();
 
     // a finished word gets checked when you type what comes after it
-    if (plain && (enter || e->key() == Qt::Key_Tab || (t.size() == 1 && QString(" (),;=<>+-*/%").contains(t[0]))))
+    if (plain && (enter || e->key() == Qt::Key_Tab || (!ch.isNull() && QString(" (),;=<>+-*/%").contains(ch))))
         capitalizeWordBeforeCursor();
 
+    if (e->key() == Qt::Key_Backtab) {   // Shift+Tab
+        indentLines(false);
+        return;
+    }
     if (e->key() == Qt::Key_Tab && plain) {
-        insertPlainText("    ");
+        QTextCursor c = textCursor();
+        if (c.hasSelection() && document()->findBlock(c.selectionStart()) != document()->findBlock(c.selectionEnd()))
+            indentLines(true);
+        else
+            insertPlainText(QString(INDENT - c.positionInBlock() % INDENT, ' '));   // to the next tab stop
         return;
     }
-    if (enter && plain && !(e->modifiers() & Qt::ShiftModifier)) {   // keep the line's indentation
-        QString line = textCursor().block().text();
-        int n = 0;
-        while (n < line.size() && (line[n] == ' ' || line[n] == '\t')) n++;
-        insertPlainText("\n" + line.left(n));
-        ensureCursorVisible();
+    if (enter && plain && !(e->modifiers() & Qt::ShiftModifier)) {
+        newLineWithIndent();
         return;
     }
+    if (plain && e->key() == Qt::Key_Backspace && smartBackspace()) return;
+    if (plain && ch == ')' && (skipClosing(ch) || dedentClosingParen())) return;
+    if (plain && ch == '\'' && (skipClosing(ch) || openPair(ch))) return;
+    if (plain && ch == '(' && openPair(ch)) return;
     QPlainTextEdit::keyPressEvent(e);
 }

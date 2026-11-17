@@ -65,6 +65,14 @@ protected:
 private:
     void capitalizeWordBeforeCursor();
     bool isCode(const QTextBlock& block, int column) const;
+
+    // indentation and bracket helpers for keyPressEvent
+    void newLineWithIndent();
+    void indentLines(bool in);
+    bool smartBackspace();
+    bool openPair(QChar open);
+    bool skipClosing(QChar close);
+    bool dedentClosingParen();
     void updateHighlights();
 
     QWidget* gutter_;
