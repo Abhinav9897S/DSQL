@@ -1,25 +1,20 @@
-// MiniSQL Workbench, the desktop app.
+// MiniSQL desktop app.
 //
-//   MiniSQLWorkbench [folder] [--frames N] [--order N]
+//   MiniSQL [folder] [--frames N] [--order N]
 //
 // --frames sets the buffer pool size (default 64 pages), --order the B+ tree
-// order (default 4, small enough to look at in the Structures tab).
+// order (default 4).
 
 #include <QApplication>
-#include <QSettings>
 #include <QFileInfo>
 #include <cstring>
 #include <cstdlib>
 #include "gui/MainWindow.h"
-#include "gui/Theme.h"
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    QApplication::setApplicationName("MiniSQL Workbench");
+    QApplication::setApplicationName("MiniSQL");
     QApplication::setOrganizationName("MiniSQL");
-    app.setFont(uiFont(10));
-    applyTheme(QSettings().value("theme", "dark").toString() != "light");
-    app.setWindowIcon(QIcon(logoPixmap(64)));
 
     int frames = 64, order = 4;
     QString folder;

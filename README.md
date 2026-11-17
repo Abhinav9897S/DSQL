@@ -4,33 +4,47 @@ A small relational database engine, written in C++17 for our Data Structures Lab
 container in the engine is hand-written. There is no `std::vector`, `std::map`,
 `std::list`, `std::string` or `<algorithm>` anywhere, and the build fails if one shows up.
 
-It comes as a desktop app, **MiniSQL Workbench** (built with Qt). You write SQL in it, and a
-side panel explains which data structures each query went through.
+It comes with a simple desktop app (built with Qt): type SQL, run it, and a side panel
+lists which data structures the query used, step by step.
 
 ## Running it on Windows
 
 1. **Install Qt.** Download the *Qt Online Installer* from qt.io (it asks you to make a free
-   Qt account). In the component list, pick the newest **Qt 6.x**, and under it
-   **MinGW 64-bit**. Leave the defaults under *Build Tools*, which include the MinGW
-   compiler, CMake and Ninja. Qt Creator, the IDE, is installed with it.
-2. **Open the project.** Start Qt Creator, choose *File → Open File or Project…*, and pick
-   `CMakeLists.txt` in this folder. When it asks for a kit, tick
-   *Desktop Qt 6.x MinGW 64-bit* and press *Configure Project*.
-3. **Run.** Press the green ▶ button (or `Ctrl+R`). If another program starts, use the
-   target selector above the ▶ button (the monitor icon) and pick **MiniSQLWorkbench**.
+   Qt account). Pick the newest **Qt 6.x** and under it **MinGW 64-bit**. The default build
+   tools (MinGW compiler, CMake, Ninja) and Qt Creator come with it.
+2. **Open the project.** In Qt Creator choose *File → Open File or Project…* and pick
+   `CMakeLists.txt` in this folder. Tick the *Desktop Qt 6.x MinGW 64-bit* kit and press
+   *Configure Project*.
+3. **Run.** Press the green ▶ button. If something else starts, pick **MiniSQL** in the
+   target selector just above the ▶ button.
 
-The welcome screen lets you create a new folder (it gets a starter script with sample
-tables and queries), open an existing folder, or start an in-memory session.
+To share the app, build in *Release* mode, then open the *Qt 6.x (MinGW)* command prompt
+from the Start menu, `cd` into the build folder and run `windeployqt MiniSQL.exe`. That
+copies the Qt DLLs next to the exe, so the folder runs on any Windows PC.
 
-**Sharing the .exe:** build in *Release* mode, then open the *Qt 6.x (MinGW) command
-prompt* from the Start menu, `cd` to the build folder and run
-`windeployqt MiniSQLWorkbench.exe`. That copies the Qt DLLs next to the exe, and the
-folder can then be zipped and run on any Windows PC.
+## Using the app
+
+- **Start screen:** *New Folder…*, *Open Folder…*, *In-Memory Session*, and a list of
+  recent folders (double-click one to open it). Tables are saved in the folder's `data/`
+  subfolder.
+- **Left:** the tables, with their columns and which ones have an index. Double-click a
+  table to see its rows.
+- **Middle:** the SQL box.
+  - **Run All** (`F5`) runs everything, or just the selected text.
+  - **Run Statement** (`Ctrl+Enter`) runs the statement the cursor is in.
+  - `Ctrl+S` saves the script.
+- **Bottom:** **Result** shows the rows. **Messages** lists every statement that ran.
+- **Right:** *How the query ran* shows the plan, the data structures used with their
+  counts, and the step-by-step story from the engine.
+- **View → Dark Mode** switches the colours. **File → Close Folder** goes back to the
+  start screen.
+
+If there's an error, the cursor jumps to the line it's on.
 
 ## Linux and macOS
 
-Install Qt 6 (`sudo apt install qt6-base-dev qt6-svg-dev cmake` on Ubuntu, or
-`brew install qt cmake` on a Mac), then:
+Install Qt 6 (`sudo apt install qt6-base-dev cmake` on Ubuntu, `brew install qt cmake` on
+a Mac), then:
 
 ```bash
 cmake -B build
@@ -39,15 +53,13 @@ cmake -B build
 cmake --build build
 ```
 ```bash
-./build/MiniSQLWorkbench
+./build/MiniSQL
 ```
-
-Qt Creator works the same way as on Windows.
 
 ## Without Qt
 
-The engine itself needs nothing but a C++17 compiler. `make` builds the terminal version
-and the tests:
+The engine itself needs only a C++17 compiler. `make` builds a terminal version and the
+tests:
 
 ```bash
 make
@@ -65,39 +77,8 @@ make test
 make bench
 ```
 
-`--run … --explain` prints the same data structure trace the app shows. `make test` runs
-the data structure and end-to-end tests, and `make bench` runs the indexed vs full-scan
-benchmark.
-
-## The workbench
-
-- **Welcome screen**: *New folder…*, *Open folder…* (real Windows folder dialogs),
-  *In-memory session*, and your recent folders. *Close Folder* in the File menu brings you
-  back to it.
-- **Navigator** (left dock): tables with their columns, keys and indexes; the folder's
-  `.sql` scripts; and the raw storage files (`data/*.tbl`, `data/catalog.msql`) with their
-  sizes. Double-click a table to see its rows; right-click for *Describe* and *Show Its
-  Structures*.
-- **Editor**: tabs, line numbers, SQL highlighting, the error line marked in red, `Tab`
-  indentation and `Ctrl+/` comments.
-  - Run the statement under the cursor with `Ctrl+Enter`.
-  - Run everything, or just the selection, with `Ctrl+Shift+Enter` or `F5`.
-  - Save with `Ctrl+S`.
-- **Results**: a grid per result set, plus an *Output* log of every statement with its
-  time. Click a line in the log to explain that statement again.
-- **Data Structures panel** (right dock):
-  - **Explain** shows, for the selected statement:
-    - a pipeline diagram with the stages it used lit up (tokenizer, parser, catalog,
-      index, buffer pool, disk);
-    - a card for each structure it touched, with its counters;
-    - a numbered step-by-step story;
-    - the token queue and the raw counters.
-  - **Structures** draws the live state: the B+ tree with its linked leaves, each AVL
-    index, the page directory, the buffer pool's LRU list and the catalog's hash buckets.
-    Hover a node for its row ids.
-  - **Learn** has a card per structure: how it works, its costs, where it lives in the
-    code, and a query you can insert into the editor.
-- Dark and light themes (the sun/moon button), and docks you can move, close or float.
+`--explain` prints the same data structure steps the app shows. `make bench` compares
+indexed lookups against full scans on 10,000 rows.
 
 ## SQL it understands
 
@@ -132,15 +113,13 @@ There is no `NULL`, and there are no transactions.
 | Merge sort | `src/ds/Sort.h` | ORDER BY when no index gives the order |
 | String | `src/ds/Str.h` | every piece of text in the engine |
 
-The GUI talks to Qt in Qt's own types (`QString`, widgets), but it keeps its own data in
-these structures too. Script lists and run history are `DynArray`s, the editor's keyword
-lookup is a `HashTable`, and the B+ tree picture is laid out with a breadth-first walk
-over a `Queue`.
+The app's code (`src/gui/`) only uses Qt for the window itself. Everything the database
+does goes through the structures above.
 
 ## How a query runs
 
 ```
- Workbench / CLI
+ App / CLI
       |  SQL text
  Tokenizer  ---------------------------  Queue of tokens
       |
@@ -178,7 +157,7 @@ src/storage/   Value, pages on disk, buffer pool, tables, catalog
 src/index/     the Index interface, plus B+ tree and AVL adapters
 src/sql/       lexer, parser, executor
 src/util/      trace, OS helpers
-src/gui/       the Qt desktop app
+src/gui/       the Qt desktop app (one window, MainWindow.cpp)
 src/main.cpp   the terminal version (minisql-cli)
 tests/         assertion-based tests
 cmake/, scripts/   the no-STL audit (CMake for Qt Creator builds, shell for make)

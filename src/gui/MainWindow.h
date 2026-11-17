@@ -1,29 +1,23 @@
 #pragma once
 #include <QMainWindow>
 #include "ds/DynArray.h"
-#include "ds/HashTable.h"
 #include "storage/Catalog.h"
 #include "sql/Executor.h"
-#include "gui/ResultsPanel.h"
 
 class QStackedWidget;
-class QTabWidget;
+class QListWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
-class QDockWidget;
+class QPlainTextEdit;
+class QTableWidget;
+class QTabWidget;
+class QTextBrowser;
 class QLabel;
 class QAction;
-class QToolBar;
-class QSplitter;
-class WelcomePage;
-class SqlEditor;
-class ExplainView;
-class StructuresView;
-class LearnView;
 
-// The workbench window. The welcome page and the workbench share it; the
-// navigator and the data structure panel are dock widgets you can move,
-// close or float like in any IDE.
+// The whole app in one window, with two pages:
+//   start page - new folder, open folder, in-memory session, recent folders
+//   work page  - tables | SQL box + results | how the last query ran
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -34,97 +28,60 @@ protected:
     void closeEvent(QCloseEvent* e) override;
 
 private:
-    void buildActions();
+    QWidget* buildStartPage();
+    QWidget* buildWorkPage();
     void buildMenus();
-    void buildToolbar();
-    void buildWorkbench();
-    void buildStatusBar();
-    void refreshIcons();
 
-    // workspace
+    // folders
     void newFolder();
     void openFolderDialog();
     void openMemory();
-    bool closeFolder();
-    void enterWorkbench();
-    void showWelcome();
-    void setWorkspaceActions(bool on);
+    void closeFolder();
+    void showWorkPage();
+    void showStartPage();
 
-    // editor tabs
-    SqlEditor* currentEditor() const;
-    SqlEditor* newScript(const QString& text = QString(), const QString& path = QString(), const QString& title = QString());
-    void openScriptFile(const QString& path);
+    // the script in the SQL box
+    void loadScript(const QString& path);
     void openScriptDialog();
-    bool saveEditor(SqlEditor* ed, bool saveAs);
-    bool closeTab(int index);
-    bool confirmDiscard();
-    void updateTabTitle(SqlEditor* ed);
-    void openSample();
+    bool saveScript();
+    bool maybeSave();
+    void updateScriptLabel();
+    void loadSample();
 
-    // running SQL
+    // running
     void run(bool all);
-    void runSql(const QString& sql, int firstLine, SqlEditor* ed);
+    void runSql(const QString& sql, int firstLine);
+    void showResult(const Result& r);
+    void explain(const Result& r);
+    void refreshTables();
+    void tableDoubleClicked(QTreeWidgetItem* item);
 
-    // panels
-    void refreshNavigator();
-    void refreshStatus();
-    void showEntry(int historyIndex);
-    void showLearn(const QString& key);
-    void showStructures(const QString& table);
-    void navigatorMenu(const QPoint& pos);
-    void navigatorDoubleClick(QTreeWidgetItem* item);
-
-    // misc
-    void toggleTheme();
-    void loadSettings();
+    void setDarkMode(bool on);
     void rememberFolder(const QString& path);
-    void forgetFolder(const QString& path);
-    QString startDir() const;
-    void showShortcuts();
-    void showAbout();
-    void showDsDialog(const QString& key);
+    void refreshRecent();
 
     Catalog& cat_;
     Executor& exec_;
 
-    QStackedWidget* stack_;
-    WelcomePage* welcome_;
-    QWidget* bench_;
-    QTabWidget* editors_;
-    ResultsPanel* results_;
-    QSplitter* split_;
-    QTreeWidget* nav_;
-    QDockWidget* navDock_;
-    QDockWidget* dsDock_;
-    QTabWidget* dsTabs_;
-    ExplainView* explain_;
-    StructuresView* structures_;
-    LearnView* learn_;
-    QToolBar* toolbar_;
-    QLabel* chipOrder_;
-    QLabel* chipPool_;
-    QLabel* sbWorkspace_;
-    QLabel* sbTables_;
-    QLabel* sbPool_;
-    QLabel* sbLast_;
-    QLabel* sbCursor_;
+    QStackedWidget* pages_;
+    QListWidget* recentList_;
+    QTreeWidget* tables_;
+    QPlainTextEdit* editor_;
+    QLabel* scriptLabel_;
+    QTabWidget* output_;
+    QTableWidget* resultTable_;
+    QPlainTextEdit* messages_;
+    QTextBrowser* explain_;
+    QLabel* cursorLabel_;
 
-    QAction* actNewScript_;
-    QAction* actOpenScript_;
-    QAction* actSave_;
-    QAction* actSaveAs_;
-    QAction* actNewFolder_;
-    QAction* actOpenFolder_;
-    QAction* actCloseFolder_;
-    QAction* actRunAll_;
-    QAction* actRunStatement_;
-    QAction* actSample_;
-    QAction* actClearOutput_;
-    QAction* actTheme_;
+    QAction* closeFolderAct_;
+    QAction* openScriptAct_;
+    QAction* saveScriptAct_;
+    QAction* runAllAct_;
+    QAction* runStatementAct_;
+    QAction* sampleAct_;
+    QAction* darkAct_;
 
-    DynArray<RunEntry> history_;   // every statement run in this workspace
-    DynArray<QString> recent_;
-    HashTable<Str, bool> expanded_; // navigator tables left open
-    int runCounter_ = 0;
-    int untitled_ = 0;
+    QString scriptPath_;          // file the SQL box is saved to (may not exist yet)
+    DynArray<QString> recent_;    // recently opened folders, newest first
 };

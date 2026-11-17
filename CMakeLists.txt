@@ -17,19 +17,19 @@ target_include_directories(minisql_engine PUBLIC src)
 add_dependencies(minisql_engine audit_stl)
 
 # The desktop app. Listed first so Qt Creator picks it as the thing to run.
-find_package(Qt6 6.2 COMPONENTS Widgets Svg)
+find_package(Qt6 6.2 COMPONENTS Widgets)
 if(Qt6_FOUND)
     file(GLOB GUI_SRC CONFIGURE_DEPENDS src/gui/*.cpp src/gui/*.h)
-    add_executable(MiniSQLWorkbench ${GUI_SRC} resources.qrc)
-    set_target_properties(MiniSQLWorkbench PROPERTIES
+    add_executable(MiniSQL ${GUI_SRC} resources.qrc)
+    set_target_properties(MiniSQL PROPERTIES
         AUTOMOC ON
         AUTORCC ON
         WIN32_EXECUTABLE ON
         MACOSX_BUNDLE ON)
-    target_link_libraries(MiniSQLWorkbench PRIVATE minisql_engine Qt6::Widgets Qt6::Svg)
+    target_link_libraries(MiniSQL PRIVATE minisql_engine Qt6::Widgets)
 else()
-    message(WARNING "Qt 6 (Widgets + Svg) not found: building only the engine, the CLI and the tests. "
-                    "Install Qt 6 or point CMAKE_PREFIX_PATH at it to get MiniSQLWorkbench.")
+    message(WARNING "Qt 6 not found: building only the engine, the CLI and the tests. "
+                    "Install Qt 6 or point CMAKE_PREFIX_PATH at it to get the MiniSQL app.")
 endif()
 
 # Terminal version of the engine: SQL prompt, script runner, benchmark.
