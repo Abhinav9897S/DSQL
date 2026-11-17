@@ -1,0 +1,5 @@
+build/
+minisql
+minisql.exe
+*.o
+*.d
