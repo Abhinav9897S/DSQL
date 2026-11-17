@@ -1,0 +1,21 @@
+# Fails the build if an STL container (or <algorithm>, <string>, <sstream>)
+# shows up in our own code. Run by CMake on every build: cmake -DROOT=... -P
+set(banned "vector|map|unordered_map|set|unordered_set|list|forward_list|deque|stack|queue|priority_queue|array|string|sstream|algorithm|bitset|span")
+
+file(GLOB_RECURSE files "${ROOT}/src/*.h" "${ROOT}/src/*.cpp" "${ROOT}/tests/*.cpp")
+set(found "")
+foreach(f ${files})
+  file(STRINGS "${f}" lines REGEX "#include[ \t]*<(${banned})>|std::(${banned})[^A-Za-z0-9_]")
+  foreach(line ${lines})
+    # comment-only lines are fine (headers mention what they replace)
+    if(NOT line MATCHES "^[ \t]*//")
+      string(APPEND found "\n  ${f}: ${line}")
+    endif()
+  endforeach()
+endforeach()
+
+list(LENGTH files count)
+if(found)
+  message(FATAL_ERROR "audit: STL containers found:${found}")
+endif()
+message(STATUS "audit: no STL containers in ${count} source files")

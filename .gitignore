@@ -1,5 +1,7 @@
 build/
-minisql
-minisql.exe
+build-*/
+minisql-cli
+minisql-cli.exe
 *.o
 *.d
+CMakeLists.txt.user*

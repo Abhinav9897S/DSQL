@@ -2,7 +2,6 @@
 #include "ds/BPlusTree.h"
 #include "ds/AVLTree.h"
 #include "storage/Value.h"
-#include "util/Json.h"
 
 struct Bound {
     bool on = false;      // false = no limit on this side
@@ -28,7 +27,6 @@ public:
     virtual int height() const = 0;
     virtual int keys() const = 0;
     virtual int nodes() const = 0;
-    virtual void dump(Json& j, int maxPerLevel) const = 0;   // for the structure viewer
 };
 
 // Primary key: unique, ordered, leaves linked for range scans.
@@ -49,7 +47,7 @@ public:
     int keys() const override { return tree_.size(); }
     int nodes() const override { return tree_.nodeCount(); }
     int order() const { return tree_.order(); }
-    void dump(Json& j, int maxPerLevel) const override;
+    const BPlusTree<Value>& tree() const { return tree_; }   // read-only, for the GUI's pictures
 
 private:
     BPlusTree<Value> tree_;
@@ -71,7 +69,7 @@ public:
     int height() const override { return tree_.height(); }
     int keys() const override { return tree_.keyCount(); }
     int nodes() const override { return tree_.keyCount(); }
-    void dump(Json& j, int maxDepth) const override;
+    const AVLTree<Value>& tree() const { return tree_; }
 
 private:
     AVLTree<Value> tree_;

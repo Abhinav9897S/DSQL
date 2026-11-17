@@ -55,18 +55,6 @@ bool listDir(const Str& path, DynArray<DirEntry>& out) {
     return true;
 }
 
-void listRoots(DynArray<DirEntry>& out) {
-    DWORD mask = GetLogicalDrives();
-    for (int i = 0; i < 26; i++) {
-        if (!(mask & (1u << i))) continue;
-        DirEntry e;
-        e.name += (char)('A' + i);
-        e.name += ":\\";
-        e.dir = true;
-        out.push(e);
-    }
-}
-
 Str home() {
     const char* h = getenv("USERPROFILE");
     return h ? Str(h) : Str("C:\\");
@@ -83,11 +71,6 @@ Str absolute(const Str& path) {
 }
 
 char sep() { return '\\'; }
-
-void openBrowser(const Str& url) {
-    Str cmd = "start \"\" \"" + url + "\"";
-    system(cmd.c_str());
-}
 
 #else
 
@@ -127,8 +110,6 @@ bool listDir(const Str& path, DynArray<DirEntry>& out) {
     return true;
 }
 
-void listRoots(DynArray<DirEntry>&) {}
-
 Str home() {
     const char* h = getenv("HOME");
     return h ? Str(h) : Str("/");
@@ -145,16 +126,6 @@ Str absolute(const Str& path) {
 }
 
 char sep() { return '/'; }
-
-void openBrowser(const Str& url) {
-#ifdef __APPLE__
-    Str cmd = "open '" + url + "' >/dev/null 2>&1 &";
-#else
-    Str cmd = "xdg-open '" + url + "' >/dev/null 2>&1 &";
-#endif
-    int rc = system(cmd.c_str());
-    (void)rc;
-}
 
 #endif
 

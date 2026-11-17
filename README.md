@@ -1,64 +1,103 @@
 # MiniSQL
 
-A small in-memory relational database engine, written in C++17 for our Data Structures Lab.
-Every container in it is hand-written. There is no `std::vector`, `std::map`, `std::list`,
-`std::string` or `<algorithm>` anywhere, and `make` refuses to build if one shows up.
+A small relational database engine, written in C++17 for our Data Structures Lab. Every
+container in the engine is hand-written. There is no `std::vector`, `std::map`,
+`std::list`, `std::string` or `<algorithm>` anywhere, and the build fails if one shows up.
 
-It comes with a browser-based workbench (served by the engine itself) where you write SQL
-and watch a side panel explain which data structures each query went through.
+It comes as a desktop app, **MiniSQL Workbench** (built with Qt). You write SQL in it, and a
+side panel explains which data structures each query went through.
 
-## Build and run
+## Running it on Windows
 
-You need `g++` (or `clang++`) with C++17 and `make`. Nothing else.
+1. **Install Qt.** Download the *Qt Online Installer* from qt.io (it asks you to make a free
+   Qt account). In the component list, pick the newest **Qt 6.x**, and under it
+   **MinGW 64-bit**. Leave the defaults under *Build Tools*, which include the MinGW
+   compiler, CMake and Ninja. Qt Creator, the IDE, is installed with it.
+2. **Open the project.** Start Qt Creator, choose *File → Open File or Project…*, and pick
+   `CMakeLists.txt` in this folder. When it asks for a kit, tick
+   *Desktop Qt 6.x MinGW 64-bit* and press *Configure Project*.
+3. **Run.** Press the green ▶ button (or `Ctrl+R`). If another program starts, use the
+   target selector above the ▶ button (the monitor icon) and pick **MiniSQLWorkbench**.
+
+The welcome screen lets you create a new folder (it gets a starter script with sample
+tables and queries), open an existing folder, or start an in-memory session.
+
+**Sharing the .exe:** build in *Release* mode, then open the *Qt 6.x (MinGW) command
+prompt* from the Start menu, `cd` to the build folder and run
+`windeployqt MiniSQLWorkbench.exe`. That copies the Qt DLLs next to the exe, and the
+folder can then be zipped and run on any Windows PC.
+
+## Linux and macOS
+
+Install Qt 6 (`sudo apt install qt6-base-dev qt6-svg-dev cmake` on Ubuntu, or
+`brew install qt cmake` on a Mac), then:
+
+```bash
+cmake -B build
+```
+```bash
+cmake --build build
+```
+```bash
+./build/MiniSQLWorkbench
+```
+
+Qt Creator works the same way as on Windows.
+
+## Without Qt
+
+The engine itself needs nothing but a C++17 compiler. `make` builds the terminal version
+and the tests:
 
 ```bash
 make
 ```
-
 ```bash
-./minisql
+./minisql-cli                                  # SQL prompt, in-memory
+```
+```bash
+./minisql-cli --run examples/getting_started.sql --explain
+```
+```bash
+make test
+```
+```bash
+make bench
 ```
 
-That starts the workbench on http://localhost:8080 and opens your browser. From the
-welcome page you can create a new folder (it gets a starter script), open an existing one,
-or start an in-memory session.
-
-Other ways to run it:
-
-```bash
-./minisql --cli                       # SQL prompt in the terminal, in-memory
-./minisql --cli myfolder --explain    # prompt on a workspace folder, with traces
-./minisql --run examples/getting_started.sql --explain
-./minisql --bench 10000               # indexed vs full-scan benchmark
-make test                             # data structure + end-to-end tests
-```
-
-Options: `--port N`, `--frames N` (buffer pool size, default 64), `--order N`
-(B+ tree order, default 4 so the tree is small enough to look at), `--no-browser`.
-
-### Windows
-
-With MinGW-w64 on the PATH, run `build.bat` (or `build.bat test`), then `minisql.exe`.
-CMake works too: `cmake -B build && cmake --build build`.
+`--run … --explain` prints the same data structure trace the app shows. `make test` runs
+the data structure and end-to-end tests, and `make bench` runs the indexed vs full-scan
+benchmark.
 
 ## The workbench
 
-- **Welcome page**: new folder, open folder, in-memory session, and a list of recent folders.
-- **Navigator** (left): tables with their columns and indexes, the folder's `.sql` scripts,
-  and the raw storage files (`data/*.tbl`, `data/catalog.msql`) with their sizes.
-- **Editor**: tabs, line numbers, SQL highlighting, and error lines marked in red.
-  `Ctrl+Enter` runs the statement under the cursor, `Ctrl+Shift+Enter` runs everything
-  (or just the selection), and `Ctrl+S` saves.
-- **Results**: one grid per result set, plus an Output log of every statement with its timing.
-- **Data structure panel** (right):
-  - *Explain* shows the pipeline the statement went through (tokenizer, parser, catalog,
-    index, buffer pool, disk), which structures were used and how hard they worked, a
-    numbered step-by-step story, the token queue, and the raw counters.
-  - *Structures* draws the live state: B+ tree levels and leaf chain, AVL trees, the page
-    directory, the buffer pool's LRU list, and the catalog's hash buckets.
-  - *Learn* has a card per structure covering how it works, its costs, where it lives in
-    the code, and a query to try.
-- Dark and light themes (the toggle at the top right) and resizable panels.
+- **Welcome screen**: *New folder…*, *Open folder…* (real Windows folder dialogs),
+  *In-memory session*, and your recent folders. *Close Folder* in the File menu brings you
+  back to it.
+- **Navigator** (left dock): tables with their columns, keys and indexes; the folder's
+  `.sql` scripts; and the raw storage files (`data/*.tbl`, `data/catalog.msql`) with their
+  sizes. Double-click a table to see its rows; right-click for *Describe* and *Show Its
+  Structures*.
+- **Editor**: tabs, line numbers, SQL highlighting, the error line marked in red, `Tab`
+  indentation and `Ctrl+/` comments.
+  - Run the statement under the cursor with `Ctrl+Enter`.
+  - Run everything, or just the selection, with `Ctrl+Shift+Enter` or `F5`.
+  - Save with `Ctrl+S`.
+- **Results**: a grid per result set, plus an *Output* log of every statement with its
+  time. Click a line in the log to explain that statement again.
+- **Data Structures panel** (right dock):
+  - **Explain** shows, for the selected statement:
+    - a pipeline diagram with the stages it used lit up (tokenizer, parser, catalog,
+      index, buffer pool, disk);
+    - a card for each structure it touched, with its counters;
+    - a numbered step-by-step story;
+    - the token queue and the raw counters.
+  - **Structures** draws the live state: the B+ tree with its linked leaves, each AVL
+    index, the page directory, the buffer pool's LRU list and the catalog's hash buckets.
+    Hover a node for its row ids.
+  - **Learn** has a card per structure: how it works, its costs, where it lives in the
+    code, and a query you can insert into the editor.
+- Dark and light themes (the sun/moon button), and docks you can move, close or float.
 
 ## SQL it understands
 
@@ -77,7 +116,7 @@ SHOW TABLES;   DESCRIBE t;
 
 `WHERE` supports `= != <> < <= > >=`, `AND OR NOT`, `BETWEEN`, `LIKE` (with `%` and `_`),
 `+ - * / %` and parentheses. Types are `INT`, `FLOAT`, `VARCHAR(n)` (up to 255) and `BOOL`.
-There is no `NULL`, and no transactions.
+There is no `NULL`, and there are no transactions.
 
 ## Where each data structure is used
 
@@ -91,12 +130,17 @@ There is no `NULL`, and no transactions.
 | Queue (circular array) | `src/ds/Queue.h` | tokens from the tokenizer to the parser |
 | Stack | `src/ds/Stack.h` | evaluating WHERE / SET expressions in postfix |
 | Merge sort | `src/ds/Sort.h` | ORDER BY when no index gives the order |
-| String | `src/ds/Str.h` | every piece of text (no `std::string`) |
+| String | `src/ds/Str.h` | every piece of text in the engine |
+
+The GUI talks to Qt in Qt's own types (`QString`, widgets), but it keeps its own data in
+these structures too. Script lists and run history are `DynArray`s, the editor's keyword
+lookup is a `HashTable`, and the B+ tree picture is laid out with a breadth-first walk
+over a `Queue`.
 
 ## How a query runs
 
 ```
- workbench / CLI
+ Workbench / CLI
       |  SQL text
  Tokenizer  ---------------------------  Queue of tokens
       |
@@ -110,15 +154,21 @@ There is no `NULL`, and no transactions.
  Storage: data/<table>.tbl, fixed-size row slots in 4 KB pages
 ```
 
-The planner looks at the top-level `AND` conditions of the `WHERE` clause. An equality on
-the primary key wins, then an equality on an AVL-indexed column, then a range on either,
-and otherwise it does a full scan. Whatever the index returns is still checked against the
-full `WHERE` on the stack machine, so the answer is always the same as a scan's. Joins use
-the other table's index if its join column has one, and otherwise build a hash table.
+**Planning.** The planner looks at the top-level `AND` conditions of the `WHERE` clause and
+picks the first of these that applies:
 
-A row id is `page * slotsPerPage + slot`. Rows never move, so the indexes can store row ids
-directly. The catalog and every dirty page are written out after each batch of statements.
-Indexes are rebuilt from the pages when a folder is opened.
+1. an equality on the primary key;
+2. an equality on an AVL-indexed column;
+3. a range on either of those;
+4. otherwise, a full scan.
+
+Whatever the index returns is still checked against the full `WHERE` on the stack
+machine, so the answer always matches a scan's. A join uses the other table's index if
+its join column has one, and builds a hash table otherwise.
+
+**Storage.** A row id is `page * slotsPerPage + slot`. Rows never move, so indexes can
+store row ids directly. The catalog and every dirty page are written to disk after each
+run, and indexes are rebuilt from the pages when a folder is opened.
 
 ## Project layout
 
@@ -127,20 +177,25 @@ src/ds/        the data structures (header-only, except Str and Stats)
 src/storage/   Value, pages on disk, buffer pool, tables, catalog
 src/index/     the Index interface, plus B+ tree and AVL adapters
 src/sql/       lexer, parser, executor
-src/server/    tiny HTTP server (raw sockets) and the JSON API
-src/util/      JSON writer, trace, OS helpers
-web/           the workbench (plain HTML/CSS/JS, no libraries)
+src/util/      trace, OS helpers
+src/gui/       the Qt desktop app
+src/main.cpp   the terminal version (minisql-cli)
 tests/         assertion-based tests
-scripts/       audit_stl.sh, the no-STL check
-examples/      getting_started.sql
+cmake/, scripts/   the no-STL audit (CMake for Qt Creator builds, shell for make)
+examples/      getting_started.sql (also built into the app)
 ```
 
 ## Testing and the benchmark
 
-`make test` checks each structure on its own (AVL rotations and balance, B+ tree
-split/borrow/merge invariants after thousands of random deletes, LRU eviction order, hash
-table resizing, stable merge sort), then runs SQL end to end, including reopening a folder
-from disk.
+`make test` checks each structure on its own:
+
+- AVL rotations and balance;
+- B+ tree split/borrow/merge invariants after thousands of random deletes;
+- LRU eviction order;
+- hash table resizing;
+- stable merge sort.
+
+It then runs SQL end to end, including reopening a folder from disk.
 
 `make bench` loads 10,000 rows and runs the same queries with and without indexes:
 
@@ -152,6 +207,6 @@ from disk.
   ORDER BY id LIMIT 10 (leaf chain)      0.0630     1.8693     29.7x       10.0    124.0
 ```
 
-(Times depend on the machine.) The buffer pool hit rate in that run is low on purpose: a
+Times depend on the machine. The buffer pool hit rate in that run is low on purpose: a
 full scan of 124 pages through 64 frames evicts every page before it's needed again. That
 is the classic weakness of plain LRU, known as sequential flooding.

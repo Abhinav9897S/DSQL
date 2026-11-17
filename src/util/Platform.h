@@ -21,9 +21,6 @@ long long fileSize(const Str& path);
 // directory listing, sorted with folders first
 bool listDir(const Str& path, DynArray<DirEntry>& out);
 
-// Windows drive letters ("C:\", "D:\"); empty elsewhere
-void listRoots(DynArray<DirEntry>& out);
-
 bool readFile(const Str& path, Str& out);
 bool writeFile(const Str& path, const Str& data);
 
@@ -36,6 +33,5 @@ Str baseName(const Str& path);
 char sep();
 
 double nowMs();
-void openBrowser(const Str& url);
 
 }
