@@ -1,0 +1,81 @@
+# Builds the Windows version of MiniSQL on a GitHub Windows machine with the
+# same setup as Qt Creator (Qt 6.8 + MinGW), tests it, and publishes a
+# ready-to-run folder as the "MiniSQL-windows" artifact of each run.
+name: Windows build
+
+on:
+  push:
+    branches: ["main", "claude/loving-goodall-hpd9wv"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8 and its MinGW compiler
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_mingw
+          tools: "tools_mingw1310"
+          cache: true
+
+      - name: Put Qt's MinGW first on PATH
+        shell: pwsh
+        run: echo "$env:IQTA_TOOLS\mingw1310_64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build (app, terminal version, tests)
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release `
+                -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+                -DCMAKE_CXX_COMPILER="$env:IQTA_TOOLS/mingw1310_64/bin/g++.exe"
+          cmake --build build -j 4
+
+      - name: Run the engine tests
+        shell: pwsh
+        run: .\build\run_tests.exe
+
+      - name: Run the sample script with the terminal version
+        shell: pwsh
+        run: .\build\minisql-cli.exe --run examples\getting_started.sql
+
+      - name: Package the app with its Qt DLLs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force MiniSQL | Out-Null
+          Copy-Item build\MiniSQL.exe MiniSQL\
+          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw MiniSQL\MiniSQL.exe
+          Set-Content MiniSQL\README.txt "Double-click MiniSQL.exe to start. Keep all the files in this folder together."
+          Get-ChildItem -Recurse MiniSQL | Select-Object FullName, Length
+
+      # Qt is taken off PATH so this proves the folder works on a PC without Qt.
+      - name: Start the packaged app and take a screenshot
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\Windows\system32;C:\Windows"
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          $app = Start-Process -FilePath MiniSQL\MiniSQL.exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { Write-Error "MiniSQL.exe closed right away (exit code $($app.ExitCode))"; exit 1 }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+          $bmp.Save("$PWD\windows-screenshot.png")
+          Stop-Process -Id $app.Id
+          Write-Host "MiniSQL.exe started fine"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MiniSQL-windows
+          path: MiniSQL/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-screenshot
+          path: windows-screenshot.png
